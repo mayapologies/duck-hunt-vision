@@ -33,6 +33,7 @@ export class GameScene implements GameInput {
   private targets: Target[] = Array.from({ length: TARGET_COUNT }, () => spawnTarget());
   private aim: NormPoint = { x: 0.5, y: 0.5 };
   private tracking: TrackingState = 'no-hand';
+  private mouseMode = false;
   private flash = 0;
   private lastShot: NormPoint | null = null;
   private lastTime: number | null = null;
@@ -82,6 +83,11 @@ export class GameScene implements GameInput {
 
   setTracking(state: TrackingState): void {
     this.tracking = state;
+  }
+
+  /** In mouse mode the crosshair is always bright; otherwise it is dimmed unless tracking is `'ready'`. */
+  setMouseMode(on: boolean): void {
+    this.mouseMode = on;
   }
 
   /** Converts a mouse/pointer event position (client pixels) to normalized canvas space. */
@@ -158,7 +164,7 @@ export class GameScene implements GameInput {
     const { ctx } = this;
     const p = normToPixel(this.aim, this.size);
     const r = 16;
-    ctx.strokeStyle = '#111';
+    ctx.strokeStyle = this.mouseMode || this.tracking === 'ready' ? '#111' : 'rgba(17, 17, 17, 0.2)';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -176,7 +182,7 @@ export class GameScene implements GameInput {
   private drawHud(): void {
     const { ctx } = this;
     const lines = [
-      TRACKING_TEXT[this.tracking],
+      this.mouseMode ? 'Mouse mode (press M for camera)' : TRACKING_TEXT[this.tracking],
       `Score: ${this.stats.score}   Hits: ${this.stats.hits}   Shots: ${this.stats.shots}`,
     ];
     ctx.font = '16px system-ui, sans-serif';

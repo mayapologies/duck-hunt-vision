@@ -16,8 +16,10 @@ export interface HandMetrics {
   handPosition: { x: number; y: number };
   /** Index knuckle→tip in mirrored screen space, in palm lengths. */
   pointDirection: { x: number; y: number };
-  /** Upward tilt of the index finger (5→8), degrees; positive = pointing up. */
+  /** Upward tilt of the index finger (5→8), degrees; positive = pointing up. Uses depth (z). */
   pitchDeg: number;
+  /** How far the index tip is above its knuckle in the image, in palm lengths. Ignores the tips' depth (z). */
+  indexRise: number;
 }
 
 interface Vec3 {
@@ -69,5 +71,6 @@ export function measureHand(landmarks: readonly Landmark[], cameraAspect: number
     handPosition: { x: 1 - rawMcp.x, y: rawMcp.y },
     pointDirection: { x: -index.x / palmSize, y: index.y / palmSize },
     pitchDeg: Math.atan2(-index.y, Math.hypot(index.x, index.z)) * RAD_TO_DEG,
+    indexRise: -index.y / palmSize,
   };
 }

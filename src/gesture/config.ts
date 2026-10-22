@@ -34,6 +34,17 @@ export interface GestureConfig {
   smoothingBeta: number;
   smoothingDerivativeCutoff: number;
 
+  /**
+   * The flick angle comes mainly from how far the index tip rises above its
+   * knuckle in the image (no depth). Index length (knuckle to tip) / palm
+   * length turns that rise into an angle.
+   */
+  flickIndexLength: number;
+  /**
+   * How much the 3D pitch (which uses MediaPipe's noisy depth/z) is blended
+   * into the flick angle. 0 = image only (default), 1 = full 3D pitch.
+   */
+  flickDepthWeight: number;
   /** The upward rotation must happen within this window. */
   flickWindowMs: number;
   /** Minimum upward rotation of the index finger within the window, in degrees. */
@@ -69,6 +80,8 @@ export const DEFAULT_GESTURE_CONFIG: Readonly<GestureConfig> = Object.freeze({
   smoothingBeta: 3,
   smoothingDerivativeCutoff: 1,
 
+  flickIndexLength: 0.85,
+  flickDepthWeight: 0,
   flickWindowMs: 150,
   flickMinAngleDeg: 18,
   flickMinVelocityDegPerSec: 250,

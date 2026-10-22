@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createGestureController, type GestureState, type Point } from './controller';
+import { DEFAULT_GESTURE_CONFIG } from './config';
+import { createGestureController, flickPitchDeg, type GestureState, type Point } from './controller';
+import { measureHand } from './metrics';
 import { handFrame, type HandOptions } from './testFixtures';
 
 const FRAME_MS = 33;
@@ -120,6 +122,59 @@ describe('createGestureController', () => {
     expect(shot!.x).toBeCloseTo(steadyAim.x, 3);
     expect(shot!.y).toBeCloseTo(steadyAim.y, 3);
     expect(last(states).aim!.y).toBeLessThan(steadyAim.y - 0.05);
+  });
+
+  it('reports the flick angle and its velocity while in the gun pose', () => {
+    const states = run([...hold(0, 300, {}), ...rotate(290, 99, 0, 30)]);
+    expect(states[0]!.flick).toEqual({ pitchDeg: expect.closeTo(0, 3), velocityDegPerSec: 0 });
+    expect(last(states).flick!.pitchDeg).toBeCloseTo(30, 3);
+    expect(last(states).flick!.velocityDegPerSec).toBeCloseTo((10 / FRAME_MS) * 1000, 0);
+    expect(run([{ t: 0, opts: { others: 'extended' } }])[0]!.flick).toBeNull();
+  });
+
+  describe('flick robustness to depth (z) noise', () => {
+    /** Adds an alternating depth error to the index finger joints, like noisy MediaPipe z. */
+    const zNoisy = (opts: HandOptions, t: number, amount: number) => {
+      const frame = handFrame({ ...opts, timestampMs: t });
+      const sign = Math.round(t / FRAME_MS) % 2 ? 1 : -1;
+      frame.landmarks = frame.landmarks.map((l, i) => (i >= 6 && i <= 8 ? { ...l, z: l.z + sign * amount } : l));
+      return frame;
+    };
+    const runNoisy = (frames: { t: number; opts: HandOptions }[], controller = createGestureController()) =>
+      frames.map(({ t, opts }) => controller.update(zNoisy(opts, t, 0.06), t));
+
+    it('the flick angle ignores index-tip depth by default', () => {
+      const frame = handFrame({ pitchDeg: 20 });
+      const m = measureHand(frame.landmarks, DEFAULT_GESTURE_CONFIG.cameraAspect)!;
+      const noisy = measureHand(zNoisy({ pitchDeg: 20 }, FRAME_MS, 0.06).landmarks, DEFAULT_GESTURE_CONFIG.cameraAspect)!;
+      expect(flickPitchDeg(m, DEFAULT_GESTURE_CONFIG)).toBeCloseTo(20, 3);
+      expect(flickPitchDeg(noisy, DEFAULT_GESTURE_CONFIG)).toBeCloseTo(20, 3);
+      expect(Math.abs(noisy.pitchDeg - 20)).toBeGreaterThan(5);
+    });
+
+    it('depth weight blends in the 3D pitch', () => {
+      const m = { ...measureHand(handFrame().landmarks, DEFAULT_GESTURE_CONFIG.cameraAspect)!, pitchDeg: 40 };
+      expect(flickPitchDeg(m, { flickIndexLength: 0.85, flickDepthWeight: 0.5 })).toBeCloseTo(20, 3);
+      expect(flickPitchDeg(m, { flickIndexLength: 0.85, flickDepthWeight: 1 })).toBeCloseTo(40, 3);
+    });
+
+    it('a still, tilted hand with noisy depth does not fire', () => {
+      expect(shots(runNoisy(hold(0, 2000, { pitchDeg: 20 })))).toHaveLength(0);
+    });
+
+    it('a real flick with noisy depth still fires exactly once', () => {
+      const states = runNoisy([
+        ...hold(0, 1000, { pitchDeg: 10 }),
+        ...rotate(990, 100, 10, 50),
+        ...hold(1100, 1000, { pitchDeg: 50 }),
+      ]);
+      expect(shots(states)).toHaveLength(1);
+    });
+
+    it('with full depth weight the same noise causes false shots (why image-space is the default)', () => {
+      const c = createGestureController({ flickDepthWeight: 1 });
+      expect(shots(runNoisy(hold(0, 2000, { pitchDeg: 20 }), c)).length).toBeGreaterThan(0);
+    });
   });
 
   it('setConfig changes thresholds live', () => {

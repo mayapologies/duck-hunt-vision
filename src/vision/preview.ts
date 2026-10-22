@@ -15,6 +15,7 @@ export const HAND_BONES: readonly (readonly [number, number])[] = [
  */
 export class CornerPreview {
   private readonly ctx: CanvasRenderingContext2D;
+  private bangUntil = -Infinity;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -40,6 +41,26 @@ export class CornerPreview {
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, width, height);
     if (frame) this.drawHand(frame.landmarks, width, height);
+    ctx.restore();
+    if (performance.now() < this.bangUntil) this.drawBang(width, height);
+  }
+
+  /** Shows a "BANG!" label on the preview for `durationMs`. */
+  showBang(durationMs = 300): void {
+    this.bangUntil = performance.now() + durationMs;
+  }
+
+  private drawBang(width: number, height: number): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.font = `bold ${Math.round(height * 0.22)}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#000';
+    ctx.fillStyle = '#ffd23f';
+    ctx.strokeText('BANG!', width / 2, height / 2);
+    ctx.fillText('BANG!', width / 2, height / 2);
     ctx.restore();
   }
 

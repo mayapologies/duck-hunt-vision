@@ -17,6 +17,13 @@ export interface GestureState {
   shot: Point | null;
   /** Raw measurements for the tuning panel; `null` when no hand is visible. */
   metrics: HandMetrics | null;
+  /** Flick angle and its upward velocity since the previous frame, for the tuning panel; `null` unless `pose` is `'gun'`. */
+  flick: FlickReadout | null;
+}
+
+export interface FlickReadout {
+  pitchDeg: number;
+  velocityDegPerSec: number;
 }
 
 export interface GestureController {
@@ -35,7 +42,19 @@ interface Sample {
 }
 
 const HISTORY_MS = 600;
+const RAD_TO_DEG = 180 / Math.PI;
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+/**
+ * Angle used for flick detection: mainly the image-space rise of the index
+ * tip (no depth), optionally blended with the depth-based 3D pitch.
+ */
+export function flickPitchDeg(m: HandMetrics, c: Pick<GestureConfig, 'flickIndexLength' | 'flickDepthWeight'>): number {
+  const rise = m.indexRise / Math.max(c.flickIndexLength, 1e-6);
+  const imagePitch = Math.asin(Math.min(1, Math.max(-1, rise))) * RAD_TO_DEG;
+  const w = Math.min(1, Math.max(0, c.flickDepthWeight));
+  return (1 - w) * imagePitch + w * m.pitchDeg;
+}
 
 export function createGestureController(overrides: Partial<GestureConfig> = {}): GestureController {
   let config: GestureConfig = { ...DEFAULT_GESTURE_CONFIG, ...overrides };
@@ -49,6 +68,7 @@ export function createGestureController(overrides: Partial<GestureConfig> = {}):
   const filterY = createOneEuroFilter(smoothing);
   const classifier = createPoseClassifier(getConfig);
   let history: Sample[] = [];
+  let prevSample: Sample | null = null;
   let lastTimestamp: number | null = null;
   let cooldownUntil = -Infinity;
 
@@ -56,6 +76,7 @@ export function createGestureController(overrides: Partial<GestureConfig> = {}):
     filterX.reset();
     filterY.reset();
     history = [];
+    prevSample = null;
   }
 
   function rawAim(m: HandMetrics): Point {
@@ -100,12 +121,18 @@ export function createGestureController(overrides: Partial<GestureConfig> = {}):
       const pose = classifier.update(metrics, timestampMs);
       if (pose !== 'gun' || !metrics) {
         resetTracking();
-        return { pose, aim: null, shot: null, metrics };
+        return { pose, aim: null, shot: null, metrics, flick: null };
       }
 
       const raw = rawAim(metrics);
       const aim = { x: clamp01(filterX.filter(raw.x, timestampMs)), y: clamp01(filterY.filter(raw.y, timestampMs)) };
-      const sample: Sample = { t: timestampMs, pitch: metrics.pitchDeg, aim };
+      const sample: Sample = { t: timestampMs, pitch: flickPitchDeg(metrics, config), aim };
+      const prev = prevSample;
+      prevSample = sample;
+      const flick: FlickReadout = {
+        pitchDeg: sample.pitch,
+        velocityDegPerSec: prev && sample.t > prev.t ? ((sample.pitch - prev.pitch) / (sample.t - prev.t)) * 1000 : 0,
+      };
 
       let shot: Point | null = null;
       if (timestampMs >= cooldownUntil) {
@@ -119,7 +146,7 @@ export function createGestureController(overrides: Partial<GestureConfig> = {}):
         history.push(sample);
         while (history.length > 0 && timestampMs - (history[0] as Sample).t > HISTORY_MS) history.shift();
       }
-      return { pose, aim, shot, metrics };
+      return { pose, aim, shot, metrics, flick };
     },
     get config() {
       return config;
