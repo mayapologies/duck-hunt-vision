@@ -1,4 +1,5 @@
 import './style.css';
+import { GameScene } from './game';
 import { CameraError, CornerPreview, startHandTracking, type TrackingStage } from './vision';
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -10,6 +11,21 @@ function byId<T extends HTMLElement>(id: string): T {
 const message = byId<HTMLDivElement>('message');
 const video = byId<HTMLVideoElement>('webcam');
 const previewCanvas = byId<HTMLCanvasElement>('preview');
+const gameCanvas = byId<HTMLCanvasElement>('game-canvas');
+
+const game = new GameScene(gameCanvas);
+game.start();
+
+gameCanvas.addEventListener('mousemove', (e) => {
+  const p = game.toNorm(e.clientX, e.clientY);
+  game.setAim(p.x, p.y);
+});
+gameCanvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  const p = game.toNorm(e.clientX, e.clientY);
+  game.setAim(p.x, p.y);
+  game.shoot(p.x, p.y);
+});
 
 const STAGE_TEXT: Record<TrackingStage, string> = {
   'loading-model': 'Loading hand tracking model…',
@@ -48,7 +64,10 @@ async function main(): Promise<void> {
     });
     const preview = new CornerPreview(previewCanvas, tracker.video);
     previewCanvas.hidden = false;
-    tracker.onHands((frame) => preview.draw(frame));
+    tracker.onHands((frame) => {
+      preview.draw(frame);
+      game.setTracking(frame ? 'hand' : 'no-hand');
+    });
   } catch (err) {
     console.error(err);
     showMessage(errorText(err), true);
